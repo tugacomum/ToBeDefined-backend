@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
+require('dotenv').config();
 
-var mongoURL = 'mongodb+srv://internetsoundseasy:Alphamon04@api.0vunngl.mongodb.net/back-end';
+var mongoURL = process.env.MONGO_URI;
 
 mongoose.connect(mongoURL, { useUnifiedTopology: true, useNewUrlParser: true });
 
