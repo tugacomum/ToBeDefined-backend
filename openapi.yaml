@@ -1,0 +1,438 @@
+openapi: 3.1.0
+info:
+  title: ToBeDefined Backend API
+  version: 0.1.0
+  description: |
+    Especificação mínima OpenAPI para a US atual do backend Express.js.
+    Inclui autenticação (registo e login), listagem de cursos, obtenção de conteúdo
+    teórico por ID e endpoint de amostra de exercícios (incluindo tipo "código" em JavaScript).
+servers:
+  - url: http://localhost:3000
+    description: Ambiente de desenvolvimento local
+  - url: https://api.example.com
+    description: Placeholder para produção
+tags:
+  - name: Health
+  - name: Auth
+  - name: Courses
+  - name: Theory
+  - name: Exercises
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Verificação de saúde do serviço
+      responses:
+        '200':
+          description: Serviço operacional
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                ok:
+                  value: { status: "ok" }
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Registo de novo utilizador
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              exemplo:
+                value:
+                  name: "Aluno Teste"
+                  email: "aluno@example.com"
+                  password: "segredo123"
+      responses:
+        '201':
+          description: Utilizador criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseUserSummary'
+              examples:
+                sucesso:
+                  value:
+                    success: true
+                    data: { id: "665f0c...", name: "Aluno Teste", email: "aluno@example.com" }
+        '400':
+          description: Payload inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email já registado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Autenticação de utilizador existente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              exemplo:
+                value:
+                  email: "aluno@example.com"
+                  password: "segredo123"
+      responses:
+        '200':
+          description: Login bem-sucedido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseToken'
+              examples:
+                sucesso:
+                  value:
+                    success: true
+                    data: { token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
+        '400':
+          description: Payload inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Credenciais inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/courses:
+    get:
+      tags: [Courses]
+      summary: Listagem de cursos
+      responses:
+        '200':
+          description: Lista de cursos (pode ser vazia)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseCourseList'
+              examples:
+                exemplo:
+                  value:
+                    success: true
+                    data:
+                      - id: "665f0c..."
+                        title: "Algoritmos de Procura"
+                        description: "Procura cega e heurística"
+                        level: "intro"
+                        slug: "algoritmos-de-procura"
+  /api/theory/{id}:
+    get:
+      tags: [Theory]
+      summary: Obter conteúdo teórico por ID
+      parameters:
+        - in: path
+          name: id
+          description: Identificador do documento teórico (MongoDB ObjectId)
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Documento teórico encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTheoryContent'
+        '404':
+          description: Não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/exercises/sample:
+    get:
+      tags: [Exercises]
+      summary: Obter exemplo de exercícios
+      description: |
+        Sem o parâmetro type, devolve um objeto com um exemplo de cada tipo.
+        Com type, devolve apenas um exercício do tipo indicado. No tipo "code",
+        apenas testes públicos são incluídos.
+      parameters:
+        - $ref: '#/components/parameters/ExerciseTypeParam'
+      responses:
+        '200':
+          description: Exemplo(s) de exercício(s)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ApiResponseExerciseSamples'
+                  - $ref: '#/components/schemas/ApiResponseSingleExercise'
+              examples:
+                agregado:
+                  value:
+                    success: true
+                    data:
+                      multipleChoice:
+                        id: "666abc..."
+                        course: "665f0c..."
+                        topic: "busca-cega"
+                        question: "Qual destas é uma procura cega?"
+                        options: ["A*", "Procura em largura", "IDA*", "SMA*"]
+                        correctIndexes: [1]
+                        explanation: "BFS não usa heurística."
+                        difficulty: "easy"
+                      trueFalse:
+                        id: "666abd..."
+                        course: "665f0c..."
+                        topic: "heuristicas"
+                        statement: "Uma heurística consistente é sempre admissível."
+                        isTrue: true
+                        explanation: "Consistência implica admissibilidade."
+                        difficulty: "easy"
+                      openEnded:
+                        id: "666abe..."
+                        course: "665f0c..."
+                        topic: "conceitos"
+                        prompt: "Explique a diferença entre procura gulosa e A*."
+                        sampleAnswer: "A gulosa usa só h(n); A* usa g(n)+h(n)."
+                        maxScore: 1
+                      code:
+                        id: "666abf..."
+                        course: "665f0c..."
+                        topic: "utils"
+                        title: "Soma de dois números"
+                        prompt: "Implemente sum(a,b) que devolve a soma."
+                        language: "javascript"
+                        starterCode: "function sum(a,b){ /* TODO / }\nmodule.exports = sum;"
+                        functionName: "sum"
+                        timeLimitMs: 2000
+                        memoryLimitMb: 128
+                        tests:
+                          - kind: "unit"
+                            input: '{"args":[2,3]}'
+                            expectedOutput: "5"
+                            public: true
+                            weight: 1
+                        difficulty: "easy"
+                filtrado_code:
+                  summary: Quando type=code
+                  value:
+                    success: true
+                    data:
+                      id: "666abf..."
+                      course: "665f0c..."
+                      topic: "utils"
+                      title: "Soma de dois números"
+                      prompt: "Implemente sum(a,b) que devolve a soma."
+                      language: "javascript"
+                      starterCode: "function sum(a,b){ / TODO */ }\nmodule.exports = sum;"
+                      functionName: "sum"
+                      tests:
+                        - kind: "unit"
+                          input: '{"args":[2,3]}'
+                          expectedOutput: "5"
+                          public: true
+                          weight: 1
+                      difficulty: "easy"
+        '400':
+          description: Tipo inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ExerciseTypeParam:
+      name: type
+      in: query
+      required: false
+      description: Tipo de exercício a devolver
+      schema:
+        type: string
+        enum: [multiple_choice, true_false, open_ended, code]
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error: { type: string, example: "Mensagem de erro" }
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: { type: string, minLength: 2 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6, maxLength: 128 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6 }
+    UserSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+    ApiResponseUserSummary:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          $ref: '#/components/schemas/UserSummary'
+    ApiResponseToken:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            token: { type: string, description: JWT de acesso }
+    CourseSummary:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        level:
+          type: string
+          enum: [intro, intermediate, advanced]
+        slug: { type: string }
+    ApiResponseCourseList:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CourseSummary'
+    TheoryContent:
+      type: object
+      properties:
+        id: { type: string }
+        course: { type: string, description: ObjectId do curso }
+        topic: { type: string }
+        title: { type: string }
+        body: { type: string, description: Markdown }
+    ApiResponseTheoryContent:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          $ref: '#/components/schemas/TheoryContent'
+    Difficulty:
+      type: string
+      enum: [easy, medium, hard]
+    ExerciseMultipleChoice:
+      type: object
+      properties:
+        id: { type: string }
+        course: { type: string }
+        topic: { type: string }
+        question: { type: string }
+        options:
+          type: array
+          items: { type: string }
+        correctIndexes:
+          type: array
+          items: { type: integer, minimum: 0 }
+        explanation: { type: string }
+        difficulty: { $ref: '#/components/schemas/Difficulty' }
+    ExerciseTrueFalse:
+      type: object
+      properties:
+        id: { type: string }
+        course: { type: string }
+        topic: { type: string }
+        statement: { type: string }
+        isTrue: { type: boolean }
+        explanation: { type: string }
+        difficulty: { $ref: '#/components/schemas/Difficulty' }
+    ExerciseOpenEnded:
+      type: object
+      properties:
+        id: { type: string }
+        course: { type: string }
+        topic: { type: string }
+        prompt: { type: string }
+        sampleAnswer: { type: string }
+        maxScore: { type: number, default: 1 }
+    CodeTest:
+      type: object
+      properties:
+        kind: { type: string, enum: [io, unit], default: unit }
+        input: { type: string, description: JSON com args no modo unit; texto no modo io }
+        expectedOutput: { type: string }
+        public: { type: boolean, description: Apenas testes públicos são expostos no endpoint sample }
+        weight: { type: number, default: 1 }
+    ExerciseCode:
+      type: object
+      properties:
+        id: { type: string }
+        course: { type: string }
+        topic: { type: string }
+        title: { type: string }
+        prompt: { type: string }
+        language: { type: string, enum: [javascript] }
+        starterCode: { type: string }
+        functionName: { type: string }
+        timeLimitMs: { type: number, default: 2000 }
+        memoryLimitMb: { type: number, default: 128 }
+        tests:
+          type: array
+          items: { $ref: '#/components/schemas/CodeTest' }
+        difficulty: { $ref: '#/components/schemas/Difficulty' }
+    ExerciseSamples:
+      type: object
+      properties:
+        multipleChoice:
+          oneOf:
+            - $ref: '#/components/schemas/ExerciseMultipleChoice'
+            - type: 'null'
+        trueFalse:
+          oneOf:
+            - $ref: '#/components/schemas/ExerciseTrueFalse'
+            - type: 'null'
+        openEnded:
+          oneOf:
+            - $ref: '#/components/schemas/ExerciseOpenEnded'
+            - type: 'null'
+        code:
+          oneOf:
+            - $ref: '#/components/schemas/ExerciseCode'
+            - type: 'null'
+    ApiResponseExerciseSamples:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          $ref: '#/components/schemas/ExerciseSamples'
+    ApiResponseSingleExercise:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          oneOf:
+            - $ref: '#/components/schemas/ExerciseMultipleChoice'
+            - $ref: '#/components/schemas/ExerciseTrueFalse'
+            - $ref: '#/components/schemas/ExerciseOpenEnded'
+            - $ref: '#/components/schemas/ExerciseCode'
