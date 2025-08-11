@@ -1,6 +1,4 @@
-import dotenv from "dotenv";
-dotenv.config();
-
+import "./config/env.js"
 import mongoose from "mongoose";
 import Course from "./models/Course.js";
 import TheoryContent from "./models/TheoryContent.js";
