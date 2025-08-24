@@ -5,6 +5,7 @@ import nodemailer from "nodemailer";
 import { z } from "zod";
 
 import { validate } from "../middleware/validate.js";
+import { auth } from "../middleware/auth.js";
 import User from "../models/User.js";
 
 const r = Router();
@@ -42,7 +43,7 @@ const registerSchema = z.object({
   body: z.object({
     name: z.string().min(2),
     email: z.string().email(),
-    password: z.string().min(6).max(128),
+    password: z.string().min(8).max(128),
   }),
 });
 
@@ -78,7 +79,6 @@ const loginSchema = z.object({
 
 r.post("/login", validate(loginSchema), async (req, res, next) => {
   try {
-    console.log("Login attempt with data:", req.data.body);
     const { email, password } = req.data.body;
 
     const u = await User.findOne({ email });
@@ -98,7 +98,15 @@ r.post("/login", validate(loginSchema), async (req, res, next) => {
       { expiresIn: "30m" }
     );
 
-    res.json({ success: true, data: { token } });
+    const { passwordHash, ...userWithoutPassword } = u.toObject();
+
+    res.json({
+      success: true,
+      data: {
+        token,
+        user: userWithoutPassword,
+      },
+    });
   } catch (e) {
     next(e);
   }
@@ -167,6 +175,47 @@ r.post("/resend-verification", validate(resendSchema), async (req, res, next) =>
   }
 });
 
+const verifyResetCodeSchema = z.object({
+  body: z.object({
+    email: z.string().email(),
+    code: z.string().length(6),
+  }),
+});
+
+r.post("/verify-reset-code", validate(verifyResetCodeSchema), async (req, res, next) => {
+  try {
+    const { email, code } = req.data.body;
+    const user = await User.findOne({ email });
+    if (!user)
+      return res.status(404).json({ success: false, error: "User not found" });
+
+    if (
+      !user.resetPasswordToken ||
+      !user.resetPasswordExpiresAt ||
+      new Date() > user.resetPasswordExpiresAt
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Reset code expired or not found" });
+    }
+
+    if (user.resetPasswordToken !== code)
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid reset code" });
+
+    const resetToken = jwt.sign(
+      { sub: user.id, action: "reset-password" },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" }
+    );
+
+    res.json({ success: true, data: { resetToken } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 const forgotPasswordSchema = z.object({
   body: z.object({
     email: z.string().email(),
@@ -208,29 +257,28 @@ r.post("/forgot-password", validate(forgotPasswordSchema), async (req, res, next
 
 const resetPasswordSchema = z.object({
   body: z.object({
-    email: z.string().email(),
-    code: z.string().length(6),
+    token: z.string(),
     newPassword: z.string().min(6).max(128),
   }),
 });
 
 r.post("/reset-password", validate(resetPasswordSchema), async (req, res, next) => {
   try {
-    const { email, code, newPassword } = req.data.body;
-    const user = await User.findOne({ email });
-    if (!user)
-      return res.status(404).json({ success: false, error: "User not found" });
+    const { token, newPassword } = req.data.body;
 
-    if (
-      !user.resetPasswordToken ||
-      !user.resetPasswordExpiresAt ||
-      new Date() > user.resetPasswordExpiresAt
-    ) {
-      return res.status(400).json({ success: false, error: "Reset code expired or not found" });
+    let payload;
+    try {
+      payload = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ success: false, error: "Invalid or expired token" });
     }
 
-    if (user.resetPasswordToken !== code)
-      return res.status(400).json({ success: false, error: "Invalid reset code" });
+    if (payload.action !== "reset-password")
+      return res.status(401).json({ success: false, error: "Invalid token action" });
+
+    const user = await User.findById(payload.sub);
+    if (!user)
+      return res.status(404).json({ success: false, error: "User not found" });
 
     user.passwordHash = await bcrypt.hash(newPassword, 11);
     user.resetPasswordToken = null;
@@ -240,6 +288,17 @@ r.post("/reset-password", validate(resetPasswordSchema), async (req, res, next) 
     res.json({ success: true, message: "Password updated successfully" });
   } catch (err) {
     next(err);
+  }
+});
+
+r.get("/profile", auth, async (req, res, next) => {
+  try {
+    const u = await User.findById(req.userId).select("-passwordHash");
+    if (!u) return res.status(404).json({ success: false, error: "User not found" });
+
+    res.json({ success: true, data: u });
+  } catch (e) {
+    next(e);
   }
 });
 
