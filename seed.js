@@ -10,12 +10,11 @@ import CODE from "./models/exercises/Code.js";
 await mongoose.connect(process.env.MONGODB_URI);
 
 const course = await Course.findOneAndUpdate(
-  { slug: "algoritmos-de-procura" },
   {
     title: "Algoritmos de Procura",
     description: "Procura cega e heurística",
     level: "intro",
-    slug: "algoritmos-de-procura",
+    type: "ctesp",
   },
   { upsert: true, new: true }
 );

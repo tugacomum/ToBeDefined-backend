@@ -8,6 +8,7 @@ import cors from "cors";
 import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.js";
 import publicRoutes from "./routes/public.js";
+import courseRoutes from "./routes/course.js"
 
 import swaggerUi from "swagger-ui-express";
 import { readFileSync } from "fs";
@@ -45,6 +46,7 @@ app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
 // Rotas da API
 app.use("/api/auth", authRoutes);
+app.use("/api/course", courseRoutes);
 app.use("/api", publicRoutes);
 
 // 404 para caminhos /api desconhecidos

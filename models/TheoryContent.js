@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 const { Schema, model, Types } = mongoose;
+
 const TheoryContentSchema = new Schema(
   {
     course: {
@@ -10,8 +11,9 @@ const TheoryContentSchema = new Schema(
     },
     topic: { type: String, required: true },
     title: { type: String, required: true },
-    body: { type: String, required: true }, // Markdown
+    body: { type: String, required: true }, 
   },
   { timestamps: true }
 );
+
 export default model("TheoryContent", TheoryContentSchema);

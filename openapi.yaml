@@ -130,8 +130,7 @@ paths:
                       - id: "665f0c..."
                         title: "Algoritmos de Procura"
                         description: "Procura cega e heurística"
-                        level: "intro"
-                        slug: "algoritmos-de-procura"
+                        type: "ctesp"
   /api/theory/{id}:
     get:
       tags: [Theory]
@@ -313,10 +312,7 @@ components:
         id: { type: string }
         title: { type: string }
         description: { type: string }
-        level:
-          type: string
-          enum: [intro, intermediate, advanced]
-        slug: { type: string }
+        type: { type: string, enum: [ctesp, licenciatura, mestrado, doutoramento] }
     ApiResponseCourseList:
       type: object
       properties:
