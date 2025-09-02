@@ -3,7 +3,7 @@ const { Schema, model } = mongoose;
 
 const UserSchema = new Schema(
   {
-    name: { type: String, required: true, trim: true },
+    name: { type: String, trim: true },
     email: {
       type: String,
       required: true,
@@ -11,6 +11,7 @@ const UserSchema = new Schema(
       lowercase: true,
       index: true,
     },
+    courseId: { type: Schema.Types.ObjectId, ref: "Course" },
     passwordHash: { type: String, required: true },
     role: {
       type: String,

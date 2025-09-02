@@ -8,17 +8,6 @@ import ExerciseCode from "../models/exercises/Code.js";
 
 const r = Router();
 
-r.get("/courses", async (_req, res, next) => {
-  try {
-    const list = await Course.find()
-      .select("title description level slug")
-      .lean();
-    res.json({ success: true, data: list });
-  } catch (e) {
-    next(e);
-  }
-});
-
 r.get("/theory/:id", async (req, res, next) => {
   try {
     const doc = await TheoryContent.findById(req.params.id).lean();
@@ -36,7 +25,7 @@ async function oneCodeSample() {
   const doc = await ExerciseCode.findOne().lean();
   if (!doc) return null;
   const { tests, ...rest } = doc;
-  return { ...rest, tests: (tests || []).filter((t) => t.public) }; // só testes públicos
+  return { ...rest, tests: (tests || []).filter((t) => t.public) }; 
 }
 
 r.get("/exercises/sample", async (req, res, next) => {
