@@ -168,13 +168,35 @@ export async function sendVerificationEmail(toEmail, code) {
   });
 
   const mailOptions = {
-    from: `"App" <${process.env.EMAIL_USER}>`,
+    from: `"ToBeDefined" <${process.env.EMAIL_USER}>`,
     to: toEmail,
     subject: "Código de Verificação",
     text: `O seu código de verificação é: ${code} (válido por 30 segundos)`,
   };
 
   await transporter.sendMail(mailOptions);
+}
+
+async function sendResetPasswordEmail(user) {
+  const code = generateVerificationCode();
+  user.resetPasswordToken = code;
+  user.resetPasswordExpiresAt = new Date(Date.now() + 30 * 1000); 
+  await user.save();
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  await transporter.sendMail({
+    from: `"App" <${process.env.EMAIL_USER}>`,
+    to: user.email,
+    subject: "Reset de Password",
+    text: `O seu código para redefinir a password é: ${code} (válido por 30 segundos).`,
+  });
 }
 
 const verifyResetCodeSchema = z.object({
@@ -198,7 +220,7 @@ r.post("/verify-reset-code", validate(verifyResetCodeSchema), async (req, res, n
     ) {
       return res
         .status(400)
-        .json({ success: false, error: "Código de redefinição expirado ou não encontrado" });
+        .json({ success: false, error: "Código de verificação expirado" });
     }
 
     if (user.resetPasswordToken !== code)
@@ -228,28 +250,11 @@ r.post("/forgot-password", validate(forgotPasswordSchema), async (req, res, next
   try {
     const { email } = req.data.body;
     const user = await User.findOne({ email });
+
     if (!user)
       return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
 
-    const code = generateVerificationCode();
-    user.resetPasswordToken = code;
-    user.resetPasswordExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    await user.save();
-
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    await transporter.sendMail({
-      from: `"App" <${process.env.EMAIL_USER}>`,
-      to: user.email,
-      subject: "Reset de Password",
-      text: `O seu código para redefinir a password é: ${code} (válido por 15 minutos)`,
-    });
+    await sendResetPasswordEmail(user);
 
     res.json({ success: true, message: "Código de redefinição de password enviado com sucesso" });
   } catch (err) {
@@ -288,6 +293,22 @@ r.post("/reset-password", validate(resetPasswordSchema), async (req, res, next) 
     await user.save();
 
     res.json({ success: true, message: "Password atualizada com sucesso" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+r.post("/resend-reset-password-code", async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user)
+      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+
+    await sendResetPasswordEmail(user);
+
+    res.json({ success: true, message: "Código de redefinição reenviado com sucesso" });
   } catch (err) {
     next(err);
   }
