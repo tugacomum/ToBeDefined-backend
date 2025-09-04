@@ -102,6 +102,49 @@ const verifySchema = z.object({
   }),
 });
 
+const verifyByEmailSchema = z.object({
+  body: z.object({
+    email: z.string().email(),
+    code: z.string().length(6),
+  }),
+});
+
+r.post("/verify-email-by-email", validate(verifyByEmailSchema), async (req, res, next) => {
+  try {
+    const { email, code } = req.data.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ success: false, error: "Utilizador já verificado" });
+    }
+
+    if (!user.verificationCode || !user.verificationCodeExpiresAt) {
+      return res.status(400).json({ success: false, error: "Nenhum código de verificação encontrado" });
+    }
+
+    if (new Date() > user.verificationCodeExpiresAt) {
+      return res.status(400).json({ success: false, error: "Código de verificação expirado" });
+    }
+
+    if (user.verificationCode !== code) {
+      return res.status(400).json({ success: false, error: "Código de verificação inválido" });
+    }
+
+    user.isVerified = true;
+    user.verificationCode = null;
+    user.verificationCodeExpiresAt = null;
+    await user.save();
+
+    res.json({ success: true, message: "Email verificado com sucesso" });
+  } catch (err) {
+    next(err);
+  }
+});
+
 r.post("/verify-email", validate(verifySchema), async (req, res, next) => {
   try {
     const { userId, code } = req.data.body;
@@ -151,6 +194,39 @@ r.post("/resend-verification-code", async (req, res, next) => {
     await user.save();
 
     await sendVerificationEmail(user.email, newCode);
+
+    res.json({ success: true, message: "Código de verificação reenviado com sucesso" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+r.post("/resend-verification-email", async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, error: "Email é obrigatório" });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ success: false, error: "Utilizador já verificado" });
+    }
+
+    if (!user.verificationCode || new Date() > user.verificationCodeExpiresAt) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      user.verificationCode = code;
+      user.verificationCodeExpiresAt = new Date(Date.now() + EXPIRATION_MINUTES * 60 * 1000);
+      await user.save();
+    }
+
+    await sendVerificationEmail(user.email, user.verificationCode);
 
     res.json({ success: true, message: "Código de verificação reenviado com sucesso" });
   } catch (err) {
