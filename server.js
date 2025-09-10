@@ -14,6 +14,8 @@ import swaggerUi from "swagger-ui-express";
 import { readFileSync } from "fs";
 import { parse } from "yaml";
 
+import cookieParser from "cookie-parser";
+
 const openapiSpec = parse(
   readFileSync(new URL("./openapi.yaml", import.meta.url), "utf8")
 );
@@ -40,6 +42,7 @@ app.use(
 );
 
 app.use(express.json());
+app.use(cookieParser());
 
 // Health-check
 app.get("/health", (_req, res) => res.json({ status: "ok" }));

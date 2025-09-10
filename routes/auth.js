@@ -5,12 +5,42 @@ import nodemailer from "nodemailer";
 import mongoose from "mongoose";
 import { z } from "zod";
 
+
 import { validate } from "../middleware/validate.js";
 import { auth } from "../middleware/auth.js";
 import User from "../models/User.js";
+import rateLimit from "../middleware/rateLimit.js";
+import csrfProtection from "../middleware/csrfProtection.js";
+
+
+const COOKIE_HTTP_ONLY = true;
+const COOKIE_SECURE = false; // true em produção HTTPS
+const COOKIE_SAME_SITE = "lax";
+const COOKIE_ACCESS_MAX_AGE = 5 * 60 * 1000; // 5 minutos
+const COOKIE_REFRESH_MAX_AGE = 15 * 24 * 60 * 60 * 1000; // 15 dias
+
+const ACCESS_TOKEN_EXPIRY_SHORT = "5m"; // Sem remember
+const ACCESS_TOKEN_EXPIRY_LONG = "15m"; // Com remember
 
 const r = Router();
 const EXPIRATION_MINUTES = 0.5;
+
+// Helpers para refresh tokens
+function generateRefreshToken(userId, familyId) {
+  return jwt.sign(
+    { sub: userId, family: familyId, jti: crypto.randomBytes(16).toString("hex") },
+    process.env.JWT_SECRET,
+    { expiresIn: ACCESS_TOKEN_EXPIRY_LONG }
+  );
+}
+
+function verifyRefreshToken(token) {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
 
 function generateVerificationCode() {
   return Math.floor(100000 + Math.random() * 900000).toString(); 
@@ -30,6 +60,7 @@ const registerSchema = z.object({
     email: z.string().email(),
     courseId: z.string().min(24).max(24),
     password: z.string().min(8).max(128),
+    keepLoggedIn: z.boolean().optional(),
   }),
 });
 
@@ -57,12 +88,13 @@ const loginSchema = z.object({
   body: z.object({
     email: z.string().email(),
     password: z.string().min(6),
+    keepLoggedIn: z.boolean().optional(), // Adiciona este campo
   }),
 });
 
 r.post("/login", validate(loginSchema), async (req, res, next) => {
   try {
-    const { email, password } = req.data.body;
+    const { email, password, keepLoggedIn } = req.data.body;
 
     const u = await User.findOne({ email });
     if (!u || !(await bcrypt.compare(password, u.passwordHash)))
@@ -75,21 +107,129 @@ r.post("/login", validate(loginSchema), async (req, res, next) => {
         .status(403)
         .json({ success: false, error: "Email não verificado" });
 
-    const token = jwt.sign(
+    const accessToken = jwt.sign(
       { sub: u.id, role: u.role },
       process.env.JWT_SECRET,
-      { expiresIn: "30m" }
+      { expiresIn: ACCESS_TOKEN_EXPIRY_SHORT }
     );
+
+    let refreshToken, refreshExpiryMs, familyId;
+    if (keepLoggedIn) {
+      familyId = crypto.randomBytes(16).toString("hex");
+      refreshToken = jwt.sign(
+        { sub: u.id, family: familyId, jti: crypto.randomBytes(16).toString("hex") },
+        process.env.JWT_SECRET,
+        { expiresIn: ACCESS_TOKEN_EXPIRY_LONG }
+      );
+      refreshExpiryMs = COOKIE_REFRESH_MAX_AGE; 
+      u.refreshTokenFamily = familyId;
+      u.refreshTokenJti = jwt.decode(refreshToken).jti;
+      await u.save();
+    }
+
+    res.cookie("accessToken", accessToken, {
+      httpOnly: COOKIE_HTTP_ONLY,
+      secure: COOKIE_SECURE,
+      sameSite: COOKIE_SAME_SITE,
+      maxAge: COOKIE_ACCESS_MAX_AGE
+    });
+    if (keepLoggedIn) {
+      res.cookie("refreshToken", refreshToken, {
+        httpOnly: COOKIE_HTTP_ONLY,
+        secure: COOKIE_SECURE,
+        sameSite: COOKIE_SAME_SITE,
+        maxAge: refreshExpiryMs
+      });
+    } else {
+      res.cookie("refreshToken", "", { maxAge: 0 });
+    }
 
     const { passwordHash, ...userWithoutPassword } = u.toObject();
 
     res.json({
       success: true,
       data: {
-        token,
+        token: accessToken,
         user: userWithoutPassword,
       },
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.get("/csrf-token", csrfProtection, (req, res) => {
+  res.json({ csrfToken: req.csrfToken() });
+});
+
+r.post("/refresh", rateLimit, csrfProtection, async (req, res, next) => {
+  try {
+    const oldToken = req.cookies.refreshToken;
+    if (!oldToken) return res.status(401).json({ success: false, error: "Sem refresh token" });
+
+    const payload = verifyRefreshToken(oldToken);
+    if (!payload) return res.status(401).json({ success: false, error: "Refresh token inválido" });
+
+    const user = await User.findById(payload.sub);
+    if (!user || user.refreshTokenFamily !== payload.family)
+      return res.status(401).json({ reason: "token_reuse" });
+
+    if (user.refreshTokenJti !== payload.jti) {
+      // Revoga toda a família
+      user.refreshTokenFamily = null;
+      user.refreshTokenJti = null;
+      await user.save();
+      res.clearCookie("accessToken");
+      res.clearCookie("refreshToken");
+      return res.status(401).json({ reason: "token_reuse" });
+    }
+
+    const newToken = generateRefreshToken(user.id, payload.family);
+    user.refreshTokenJti = jwt.decode(newToken).jti;
+    await user.save();
+
+      const accessToken = jwt.sign(
+        { sub: user.id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: ACCESS_TOKEN_EXPIRY_LONG }
+      );
+
+    res.cookie("accessToken", accessToken, {
+      httpOnly: COOKIE_HTTP_ONLY,
+      secure: COOKIE_SECURE,
+      sameSite: COOKIE_SAME_SITE,
+      maxAge: COOKIE_ACCESS_MAX_AGE
+    });
+    res.cookie("refreshToken", newToken, {
+      httpOnly: COOKIE_HTTP_ONLY,
+      secure: COOKIE_SECURE,
+      sameSite: COOKIE_SAME_SITE,
+      maxAge: COOKIE_REFRESH_MAX_AGE
+    });
+
+    res.json({ success: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.post("/logout", async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    if (refreshToken) {
+      const payload = verifyRefreshToken(refreshToken);
+      if (payload) {
+        const user = await User.findById(payload.sub);
+        if (user && user.refreshTokenFamily === payload.family) {
+          user.refreshTokenFamily = null;
+          user.refreshTokenJti = null;
+          await user.save();
+        }
+      }
+    }
+    res.clearCookie("accessToken");
+    res.clearCookie("refreshToken");
+    res.status(200).end();
   } catch (e) {
     next(e);
   }
@@ -124,10 +264,6 @@ r.post("/verify-email-by-email", validate(verifyByEmailSchema), async (req, res,
 
     if (!user.verificationCode || !user.verificationCodeExpiresAt) {
       return res.status(400).json({ success: false, error: "Nenhum código de verificação encontrado" });
-    }
-
-    if (new Date() > user.verificationCodeExpiresAt) {
-      return res.status(400).json({ success: false, error: "Código de verificação expirado" });
     }
 
     if (user.verificationCode !== code) {
@@ -391,11 +527,15 @@ r.post("/resend-reset-password-code", async (req, res, next) => {
 });
 
 r.get("/profile", auth, async (req, res, next) => {
+  const token = req.cookies.accessToken;
+  if (!token) return res.status(401).json({ success: false, error: "Sem token de acesso" });
   try {
-    const u = await User.findById(new mongoose.Types.ObjectId(req.userId)).select("-passwordHash");
-    if (!u) return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(payload.sub).lean();
+    if (!user) return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
 
-    res.json({ success: true, data: u });
+    const { passwordHash, ...userWithoutPassword } = user;
+    res.json({ success: true, data: userWithoutPassword });
   } catch (e) {
     console.error("Erro:", e);
     next(e);
