@@ -34,6 +34,8 @@ const UserSchema = new Schema(
     isVerified: { type: Boolean, default: false },
     resetPasswordToken: { type: String },
     resetPasswordExpiresAt: { type: Date },
+    refreshTokenFamily: { type: String },
+    refreshTokenJti: { type: String },
   },
   { timestamps: true, collection: "users" }
 );
