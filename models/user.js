@@ -1,23 +1,34 @@
 import mongoose from "mongoose";
 const { Schema, model } = mongoose;
+import enums, { requiredMsg } from "./utils/Enums.js";
 
 const UserSchema = new Schema(
   {
-    name: { type: String, trim: true },
+    firstName: {
+      type: String,
+      trim: true,
+      required: [true, requiredMsg("firstName")],
+    },
+    lastName: {
+      type: String,
+      trim: true,
+      required: [true, requiredMsg("lastName")],
+    },
     email: {
       type: String,
-      required: true,
-      unique: true,
+      trim: true,
       lowercase: true,
+      unique: true,
       index: true,
+      required: [true, requiredMsg("email")],
     },
-    courseId: { type: Schema.Types.ObjectId, ref: "Course" },
-    passwordHash: { type: String, required: true },
-    role: {
+    status: {
       type: String,
-      enum: ["student", "instructor", "admin"],
-      default: "student",
+      enum: ["active", "inactive", "blocked"],
+      default: "active",
     },
+    passwordHash: { type: String, required: true },
+    roles: { type: [String], enum: enums.role, default: ["student"] },
     verificationCode: { type: String },
     verificationCodeExpiresAt: { type: Date },
     isVerified: { type: Boolean, default: false },
@@ -26,7 +37,7 @@ const UserSchema = new Schema(
     refreshTokenFamily: { type: String },
     refreshTokenJti: { type: String },
   },
-  { timestamps: true }
+  { timestamps: true, collection: "users" }
 );
 
 export default model("User", UserSchema);

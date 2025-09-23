@@ -1,87 +1,245 @@
-import "./config/env.js"
 import mongoose from "mongoose";
+import dotenv from "dotenv";
+dotenv.config();
+
 import Course from "./models/Course.js";
-import TheoryContent from "./models/TheoryContent.js";
-import MC from "./models/exercises/MultipleChoice.js";
-import TF from "./models/exercises/TrueFalse.js";
-import OE from "./models/exercises/OpenEnded.js";
-import CODE from "./models/exercises/Code.js";
+import Subject from "./models/Subject.js";
+import Module from "./models/Module.js";
+import User from "./models/User.js";
+import Exercise from "./models/Exercise.js";
+import ExerciseRevision from "./models/ExerciseRevision.js";
+import bcrypt from "bcryptjs";
 
-await mongoose.connect(process.env.MONGODB_URI);
+async function seed() {
+  await mongoose.connect(process.env.MONGODB_URI);
 
-const course = await Course.findOneAndUpdate(
-  {
-    title: "Algoritmos de Procura",
-    description: "Procura cega e heurística",
-    level: "intro",
-    type: "ctesp",
-  },
-  { upsert: true, new: true }
-);
+  // Limpar coleções
+  await Promise.all([
+    Course.deleteMany({}),
+    Subject.deleteMany({}),
+    Module.deleteMany({}),
+    User.deleteMany({}),
+    Exercise.deleteMany({}),
+    ExerciseRevision.deleteMany({}),
+  ]);
 
-await TheoryContent.deleteMany({ course: course._id });
-await MC.deleteMany({ course: course._id });
-await TF.deleteMany({ course: course._id });
-await OE.deleteMany({ course: course._id });
-await CODE.deleteMany({ course: course._id });
-
-const t = await TheoryContent.create({
-  course: course._id,
-  topic: "busca-a-estrela",
-  title: "A* em poucas linhas",
-  body: "# A*\nHeurística admissível, f(n)=g(n)+h(n).",
-});
-
-await MC.create({
-  course: course._id,
-  topic: "busca-cega",
-  question: "Qual destas é uma procura cega?",
-  options: ["A*", "Procura em largura", "IDA*", "SMA*"],
-  correctIndexes: [1],
-  explanation: "BFS não usa heurística.",
-  difficulty: "easy",
-});
-
-await TF.create({
-  course: course._id,
-  topic: "heuristicas",
-  statement: "Uma heurística consistente é sempre admissível.",
-  isTrue: true,
-  explanation: "Consistência implica admissibilidade.",
-});
-
-await OE.create({
-  course: course._id,
-  topic: "conceitos",
-  prompt: "Explique a diferença entre procura gulosa e A*.",
-  sampleAnswer: "A gulosa usa só h(n); A* usa g(n)+h(n).",
-});
-
-await CODE.create({
-  course: course._id,
-  topic: "utils",
-  title: "Soma de dois números",
-  prompt: "Implemente `sum(a,b)` que devolve a soma.",
-  language: "javascript",
-  starterCode: "function sum(a,b){ /* TODO */ }\nmodule.exports = sum;",
-  functionName: "sum",
-  tests: [
+  // Cursos
+  const cursos = await Course.insertMany([
     {
-      kind: "unit",
-      input: JSON.stringify({ args: [2, 3] }),
-      expectedOutput: "5",
-      public: true,
+      title: "Algoritmos de Procura",
+      slug: "algoritmos-procura",
+      description: "Procura cega e heurística",
+      type: "ctesp",
+      isActive: true,
     },
     {
-      kind: "unit",
-      input: JSON.stringify({ args: [-1, 1] }),
-      expectedOutput: "0",
-      public: false,
+      title: "Estruturas de Dados",
+      slug: "estruturas-dados",
+      description: "Listas, árvores e grafos",
+      type: "licenciatura",
+      isActive: true,
     },
-  ],
-  difficulty: "easy",
-});
+  ]);
 
-console.log("Seed concluído.");
-await mongoose.disconnect();
-process.exit(0);
+  // Disciplinas
+  const disciplinas = await Subject.insertMany([
+    {
+      title: "Introdução à Programação",
+      slug: "introducao-programacao",
+      description: "Primeiros passos em programação",
+      isActive: true,
+    },
+    {
+      title: "Teoria dos Grafos",
+      slug: "teoria-grafos",
+      description: "Conceitos fundamentais de grafos",
+      isActive: true,
+    },
+  ]);
+
+  // Módulos
+  const modulos = await Module.insertMany([
+    {
+      subjectId: disciplinas[0]._id,
+      title: "Variáveis e Tipos",
+      order: 1,
+      theory: {
+        blocks: [
+          {
+            type: "text",
+            data: "Neste módulo vais aprender sobre variáveis e tipos de dados.",
+          },
+        ],
+      },
+      exerciseIds: [],
+    },
+    {
+      subjectId: disciplinas[1]._id,
+      title: "Representação de Grafos",
+      order: 1,
+      theory: {
+        blocks: [
+          {
+            type: "text",
+            data: "Aprende a representar grafos em memória.",
+          },
+        ],
+      },
+      exerciseIds: [],
+    },
+  ]);
+
+  // Exercícios
+  const exercicios = await Exercise.insertMany([
+    {
+      subjectId: disciplinas[0]._id,
+      moduleId: modulos[0]._id,
+      title: "Qual destas é uma variável válida em JavaScript?",
+      type: "multiple",
+      difficulty: "easy",
+      points: 1,
+      tags: ["variáveis", "javascript"],
+      currentVersion: 1,
+      active: true,
+    },
+    {
+      subjectId: disciplinas[1]._id,
+      moduleId: modulos[1]._id,
+      title: "Um grafo pode ser dirigido?",
+      type: "true_false",
+      difficulty: "easy",
+      points: 1,
+      tags: ["grafos"],
+      currentVersion: 1,
+      active: true,
+    },
+    {
+      subjectId: disciplinas[0]._id,
+      moduleId: modulos[0]._id,
+      title: "Explique a diferença entre let e var.",
+      type: "open",
+      difficulty: "medium",
+      points: 2,
+      tags: ["variáveis", "javascript"],
+      currentVersion: 1,
+      active: true,
+    },
+    {
+      subjectId: disciplinas[0]._id,
+      moduleId: modulos[0]._id,
+      title: "Soma de dois números",
+      type: "code",
+      difficulty: "easy",
+      points: 2,
+      tags: ["funções", "javascript"],
+      currentVersion: 1,
+      active: true,
+    },
+  ]);
+
+  // Revisões dos Exercícios
+  await ExerciseRevision.insertMany([
+    {
+      exerciseId: exercicios[0]._id,
+      version: 1,
+      statement: "Qual destas é uma variável válida em JavaScript?",
+      type: "multiple",
+      spec_multiple: {
+        options: ["2nome", "_nome", "var-nome", "nome!"],
+        answers: ["_nome"],
+        shuffle: true,
+      },
+    },
+    {
+      exerciseId: exercicios[1]._id,
+      version: 1,
+      statement: "Um grafo pode ser dirigido?",
+      type: "true_false",
+      spec_true_false: {
+        answer: true,
+      },
+    },
+    {
+      exerciseId: exercicios[2]._id,
+      version: 1,
+      statement: "Explique a diferença entre let e var.",
+      type: "open",
+      spec_open: {
+        rubric: [
+          "let tem escopo de bloco",
+          "var tem escopo de função",
+          "let não permite redeclaração no mesmo bloco",
+        ],
+        maxChars: 500,
+        keywords: ["escopo", "bloco", "função", "redeclaração"],
+      },
+    },
+    {
+      exerciseId: exercicios[3]._id,
+      version: 1,
+      statement:
+        "Implemente uma função sum(a, b) que devolve a soma dos dois números.",
+      type: "code",
+      spec_code: {
+        language: "javascript",
+        timeoutSec: 5,
+        memoryMb: 128,
+        runtime: "default",
+        setup: "",
+        teardown: "",
+        tests: [
+          {
+            kind: "unit",
+            functionName: "sum",
+            args: [2, 3],
+            expected: 5,
+            compare: "deepEqual",
+            public: true,
+            weight: 1,
+          },
+        ],
+      },
+    },
+  ]);
+
+  // Atualizar exerciseIds nos módulos
+  await Module.findByIdAndUpdate(modulos[0]._id, {
+    $set: {
+      exerciseIds: [exercicios[0]._id, exercicios[2]._id, exercicios[3]._id],
+    },
+  });
+  await Module.findByIdAndUpdate(modulos[1]._id, {
+    $set: { exerciseIds: [exercicios[1]._id] },
+  });
+
+  // Utilizadores
+  const passwordHash = await bcrypt.hash("admin0", 11);
+  await User.create([
+    {
+      firstName: "João",
+      lastName: "Cervaluto",
+      email: "cervaluto@tobedefined.pt",
+      passwordHash,
+      roles: ["student"],
+      isVerified: true,
+      status: "active",
+    },
+    {
+      firstName: "Xavier",
+      lastName: "Otávio",
+      email: "admin@tobedefined.pt",
+      passwordHash,
+      roles: ["admin"],
+      isVerified: true,
+      status: "active",
+    },
+  ]);
+
+  console.log("Base de dados populada com sucesso!");
+  await mongoose.disconnect();
+}
+
+seed().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

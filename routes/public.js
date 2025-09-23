@@ -1,69 +1,57 @@
 import { Router } from "express";
-import Course from "../models/Course.js";
-import TheoryContent from "../models/TheoryContent.js";
-import ExerciseMC from "../models/exercises/MultipleChoice.js";
-import ExerciseTF from "../models/exercises/TrueFalse.js";
-import ExerciseOE from "../models/exercises/OpenEnded.js";
-import ExerciseCode from "../models/exercises/Code.js";
 
-const r = Router();
+import Module from "../models/Module.js";
+import Subject from "../models/Subject.js";
+import Exercise from "../models/Exercise.js";
+import ExerciseRevision from "../models/ExerciseRevision.js";
+import Attempt from "../models/Attempt.js";
+import EnrollmentSubject from "../models/EnrollmentSubject.js";
 
-r.get("/theory/:id", async (req, res, next) => {
+const router = Router();
+
+// GET /public/subjects
+router.get("/subjects", async (req, res) => {
   try {
-    const doc = await TheoryContent.findById(req.params.id).lean();
-    if (!doc)
-      return res
-        .status(404)
-        .json({ success: false, error: "Theory content not found" });
-    res.json({ success: true, data: doc });
-  } catch (e) {
-    next(e);
+    const subjects = await Subject.find({ active: true }).select(
+      "title description"
+    );
+    res.json(subjects);
+  } catch (error) {
+    console.error("Error fetching subjects:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-async function oneCodeSample() {
-  const doc = await ExerciseCode.findOne().lean();
-  if (!doc) return null;
-  const { tests, ...rest } = doc;
-  return { ...rest, tests: (tests || []).filter((t) => t.public) }; 
-}
-
-r.get("/exercises/sample", async (req, res, next) => {
+// GET /public/subjects/:subjectId/modules
+router.get("/subjects/:subjectId/modules", async (req, res) => {
+  const { subjectId } = req.params;
   try {
-    const type = String(req.query.type || "").toLowerCase();
-    if (!type) {
-      const [mc, tf, oe, code] = await Promise.all([
-        ExerciseMC.findOne().lean(),
-        ExerciseTF.findOne().lean(),
-        ExerciseOE.findOne().lean(),
-        oneCodeSample(),
-      ]);
-      return res.json({
-        success: true,
-        data: { multipleChoice: mc, trueFalse: tf, openEnded: oe, code },
-      });
+    const modules = await Module.find({ subjectId })
+      .select("title order")
+      .sort({ order: 1 });
+    res.json(modules);
+  } catch (error) {
+    console.error("Error fetching modules:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /public/modules/:moduleId/exercises
+router.get("/modules/:moduleId/exercises", async (req, res) => {
+  const { moduleId } = req.params;
+  try {
+    const module = await Module.findById(moduleId).populate({
+      path: "exerciseIds",
+      select: "title type difficulty points",
+    });
+    if (!module) {
+      return res.status(404).json({ error: "Module not found" });
     }
-    if (type === "multiple_choice")
-      return res.json({
-        success: true,
-        data: await ExerciseMC.findOne().lean(),
-      });
-    if (type === "true_false")
-      return res.json({
-        success: true,
-        data: await ExerciseTF.findOne().lean(),
-      });
-    if (type === "open_ended")
-      return res.json({
-        success: true,
-        data: await ExerciseOE.findOne().lean(),
-      });
-    if (type === "code")
-      return res.json({ success: true, data: await oneCodeSample() });
-    res.status(400).json({ success: false, error: "Unknown type" });
-  } catch (e) {
-    next(e);
+    res.json(module.exerciseIds);
+  } catch (error) {
+    console.error("Error fetching exercises:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-export default r;
+export default router;
