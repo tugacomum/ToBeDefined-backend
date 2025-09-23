@@ -13,13 +13,15 @@ const r = Router();
 const EXPIRATION_MINUTES = 0.5;
 
 function generateVerificationCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString(); 
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 async function sendVerificationCode(user) {
-  const code = generateVerificationCode()
+  const code = generateVerificationCode();
   user.verificationCode = code;
-  user.verificationCodeExpiresAt = new Date(Date.now() + EXPIRATION_MINUTES * 60 * 1000);
+  user.verificationCodeExpiresAt = new Date(
+    Date.now() + EXPIRATION_MINUTES * 60 * 1000
+  );
   await user.save();
 
   await sendVerificationEmail(user.email, code);
@@ -109,41 +111,56 @@ const verifyByEmailSchema = z.object({
   }),
 });
 
-r.post("/verify-email-by-email", validate(verifyByEmailSchema), async (req, res, next) => {
-  try {
-    const { email, code } = req.data.body;
+r.post(
+  "/verify-email-by-email",
+  validate(verifyByEmailSchema),
+  async (req, res, next) => {
+    try {
+      const { email, code } = req.data.body;
 
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+      const user = await User.findOne({ email });
+      if (!user) {
+        return res
+          .status(404)
+          .json({ success: false, error: "Utilizador não encontrado" });
+      }
+
+      if (user.isVerified) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Utilizador já verificado" });
+      }
+
+      if (!user.verificationCode || !user.verificationCodeExpiresAt) {
+        return res.status(400).json({
+          success: false,
+          error: "Nenhum código de verificação encontrado",
+        });
+      }
+
+      if (new Date() > user.verificationCodeExpiresAt) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Código de verificação expirado" });
+      }
+
+      if (user.verificationCode !== code) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Código de verificação inválido" });
+      }
+
+      user.isVerified = true;
+      user.verificationCode = null;
+      user.verificationCodeExpiresAt = null;
+      await user.save();
+
+      res.json({ success: true, message: "Email verificado com sucesso" });
+    } catch (err) {
+      next(err);
     }
-
-    if (user.isVerified) {
-      return res.status(400).json({ success: false, error: "Utilizador já verificado" });
-    }
-
-    if (!user.verificationCode || !user.verificationCodeExpiresAt) {
-      return res.status(400).json({ success: false, error: "Nenhum código de verificação encontrado" });
-    }
-
-    if (new Date() > user.verificationCodeExpiresAt) {
-      return res.status(400).json({ success: false, error: "Código de verificação expirado" });
-    }
-
-    if (user.verificationCode !== code) {
-      return res.status(400).json({ success: false, error: "Código de verificação inválido" });
-    }
-
-    user.isVerified = true;
-    user.verificationCode = null;
-    user.verificationCodeExpiresAt = null;
-    await user.save();
-
-    res.json({ success: true, message: "Email verificado com sucesso" });
-  } catch (err) {
-    next(err);
   }
-});
+);
 
 r.post("/verify-email", validate(verifySchema), async (req, res, next) => {
   try {
@@ -151,19 +168,30 @@ r.post("/verify-email", validate(verifySchema), async (req, res, next) => {
     const user = await User.findById(userId);
 
     if (!user)
-      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+      return res
+        .status(404)
+        .json({ success: false, error: "Utilizador não encontrado" });
 
     if (user.isVerified)
-      return res.status(400).json({ success: false, error: "Utilizador já verificado" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Utilizador já verificado" });
 
     if (!user.verificationCode || !user.verificationCodeExpiresAt)
-      return res.status(400).json({ success: false, error: "Nenhum código de verificação encontrado" });
+      return res.status(400).json({
+        success: false,
+        error: "Nenhum código de verificação encontrado",
+      });
 
     if (new Date() > user.verificationCodeExpiresAt)
-      return res.status(400).json({ success: false, error: "Código de verificação expirado" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Código de verificação expirado" });
 
     if (user.verificationCode !== code)
-      return res.status(400).json({ success: false, error: "Código de verificação inválido" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Código de verificação inválido" });
 
     user.isVerified = true;
     user.verificationCode = null;
@@ -181,21 +209,38 @@ r.post("/resend-verification-code", async (req, res, next) => {
     const { userId } = req.body;
     const user = await User.findById(userId);
 
-    if (!user) return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
-    if (user.isVerified) return res.status(400).json({ success: false, error: "Utilizador já verificado" });
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, error: "Utilizador não encontrado" });
+    if (user.isVerified)
+      return res
+        .status(400)
+        .json({ success: false, error: "Utilizador já verificado" });
 
-    if (user.verificationCodeExpiresAt && new Date() < user.verificationCodeExpiresAt) {
-      return res.status(400).json({ success: false, error: "Código de verificação ainda não expirou" });
+    if (
+      user.verificationCodeExpiresAt &&
+      new Date() < user.verificationCodeExpiresAt
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: "Código de verificação ainda não expirou",
+      });
     }
 
-    const newCode = generateVerificationCode()
+    const newCode = generateVerificationCode();
     user.verificationCode = newCode;
-    user.verificationCodeExpiresAt = new Date(Date.now() + EXPIRATION_MINUTES * 60 * 1000);
+    user.verificationCodeExpiresAt = new Date(
+      Date.now() + EXPIRATION_MINUTES * 60 * 1000
+    );
     await user.save();
 
     await sendVerificationEmail(user.email, newCode);
 
-    res.json({ success: true, message: "Código de verificação reenviado com sucesso" });
+    res.json({
+      success: true,
+      message: "Código de verificação reenviado com sucesso",
+    });
   } catch (err) {
     next(err);
   }
@@ -206,29 +251,40 @@ r.post("/resend-verification-email", async (req, res, next) => {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ success: false, error: "Email é obrigatório" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Email é obrigatório" });
     }
 
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+      return res
+        .status(404)
+        .json({ success: false, error: "Utilizador não encontrado" });
     }
 
     if (user.isVerified) {
-      return res.status(400).json({ success: false, error: "Utilizador já verificado" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Utilizador já verificado" });
     }
 
     if (!user.verificationCode || new Date() > user.verificationCodeExpiresAt) {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       user.verificationCode = code;
-      user.verificationCodeExpiresAt = new Date(Date.now() + EXPIRATION_MINUTES * 60 * 1000);
+      user.verificationCodeExpiresAt = new Date(
+        Date.now() + EXPIRATION_MINUTES * 60 * 1000
+      );
       await user.save();
     }
 
     await sendVerificationEmail(user.email, user.verificationCode);
 
-    res.json({ success: true, message: "Código de verificação reenviado com sucesso" });
+    res.json({
+      success: true,
+      message: "Código de verificação reenviado com sucesso",
+    });
   } catch (err) {
     next(err);
   }
@@ -256,7 +312,7 @@ export async function sendVerificationEmail(toEmail, code) {
 async function sendResetPasswordEmail(user) {
   const code = generateVerificationCode();
   user.resetPasswordToken = code;
-  user.resetPasswordExpiresAt = new Date(Date.now() + 30 * 1000); 
+  user.resetPasswordExpiresAt = new Date(Date.now() + 30 * 1000);
   await user.save();
 
   const transporter = nodemailer.createTransport({
@@ -282,39 +338,45 @@ const verifyResetCodeSchema = z.object({
   }),
 });
 
-r.post("/verify-reset-code", validate(verifyResetCodeSchema), async (req, res, next) => {
-  try {
-    const { email, code } = req.data.body;
-    const user = await User.findOne({ email });
-    if (!user)
-      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+r.post(
+  "/verify-reset-code",
+  validate(verifyResetCodeSchema),
+  async (req, res, next) => {
+    try {
+      const { email, code } = req.data.body;
+      const user = await User.findOne({ email });
+      if (!user)
+        return res
+          .status(404)
+          .json({ success: false, error: "Utilizador não encontrado" });
 
-    if (
-      !user.resetPasswordToken ||
-      !user.resetPasswordExpiresAt ||
-      new Date() > user.resetPasswordExpiresAt
-    ) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Código de verificação expirado" });
+      if (
+        !user.resetPasswordToken ||
+        !user.resetPasswordExpiresAt ||
+        new Date() > user.resetPasswordExpiresAt
+      ) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Código de verificação expirado" });
+      }
+
+      if (user.resetPasswordToken !== code)
+        return res
+          .status(400)
+          .json({ success: false, error: "Código de redefinição inválido" });
+
+      const resetToken = jwt.sign(
+        { sub: user.id, action: "reset-password" },
+        process.env.JWT_SECRET,
+        { expiresIn: "15m" }
+      );
+
+      res.json({ success: true, data: { resetToken } });
+    } catch (err) {
+      next(err);
     }
-
-    if (user.resetPasswordToken !== code)
-      return res
-        .status(400)
-        .json({ success: false, error: "Código de redefinição inválido" });
-
-    const resetToken = jwt.sign(
-      { sub: user.id, action: "reset-password" },
-      process.env.JWT_SECRET,
-      { expiresIn: "15m" }
-    );
-
-    res.json({ success: true, data: { resetToken } });
-  } catch (err) {
-    next(err);
   }
-});
+);
 
 const forgotPasswordSchema = z.object({
   body: z.object({
@@ -322,21 +384,30 @@ const forgotPasswordSchema = z.object({
   }),
 });
 
-r.post("/forgot-password", validate(forgotPasswordSchema), async (req, res, next) => {
-  try {
-    const { email } = req.data.body;
-    const user = await User.findOne({ email });
+r.post(
+  "/forgot-password",
+  validate(forgotPasswordSchema),
+  async (req, res, next) => {
+    try {
+      const { email } = req.data.body;
+      const user = await User.findOne({ email });
 
-    if (!user)
-      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+      if (!user)
+        return res
+          .status(404)
+          .json({ success: false, error: "Utilizador não encontrado" });
 
-    await sendResetPasswordEmail(user);
+      await sendResetPasswordEmail(user);
 
-    res.json({ success: true, message: "Código de redefinição de password enviado com sucesso" });
-  } catch (err) {
-    next(err);
+      res.json({
+        success: true,
+        message: "Código de redefinição de password enviado com sucesso",
+      });
+    } catch (err) {
+      next(err);
+    }
   }
-});
+);
 
 const resetPasswordSchema = z.object({
   body: z.object({
@@ -345,34 +416,44 @@ const resetPasswordSchema = z.object({
   }),
 });
 
-r.post("/reset-password", validate(resetPasswordSchema), async (req, res, next) => {
-  try {
-    const { token, newPassword } = req.data.body;
-
-    let payload;
+r.post(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  async (req, res, next) => {
     try {
-      payload = jwt.verify(token, process.env.JWT_SECRET);
+      const { token, newPassword } = req.data.body;
+
+      let payload;
+      try {
+        payload = jwt.verify(token, process.env.JWT_SECRET);
+      } catch (err) {
+        return res
+          .status(401)
+          .json({ success: false, error: "Token inválido ou expirado" });
+      }
+
+      if (payload.action !== "reset-password")
+        return res
+          .status(401)
+          .json({ success: false, error: "Ação de token inválida" });
+
+      const user = await User.findById(payload.sub);
+      if (!user)
+        return res
+          .status(404)
+          .json({ success: false, error: "Utilizador não encontrado" });
+
+      user.passwordHash = await bcrypt.hash(newPassword, 11);
+      user.resetPasswordToken = null;
+      user.resetPasswordExpiresAt = null;
+      await user.save();
+
+      res.json({ success: true, message: "Password atualizada com sucesso" });
     } catch (err) {
-      return res.status(401).json({ success: false, error: "Token inválido ou expirado" });
+      next(err);
     }
-
-    if (payload.action !== "reset-password")
-      return res.status(401).json({ success: false, error: "Ação de token inválida" });
-
-    const user = await User.findById(payload.sub);
-    if (!user)
-      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
-
-    user.passwordHash = await bcrypt.hash(newPassword, 11);
-    user.resetPasswordToken = null;
-    user.resetPasswordExpiresAt = null;
-    await user.save();
-
-    res.json({ success: true, message: "Password atualizada com sucesso" });
-  } catch (err) {
-    next(err);
   }
-});
+);
 
 r.post("/resend-reset-password-code", async (req, res, next) => {
   try {
@@ -380,11 +461,16 @@ r.post("/resend-reset-password-code", async (req, res, next) => {
     const user = await User.findOne({ email });
 
     if (!user)
-      return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+      return res
+        .status(404)
+        .json({ success: false, error: "Utilizador não encontrado" });
 
     await sendResetPasswordEmail(user);
 
-    res.json({ success: true, message: "Código de redefinição reenviado com sucesso" });
+    res.json({
+      success: true,
+      message: "Código de redefinição reenviado com sucesso",
+    });
   } catch (err) {
     next(err);
   }
@@ -392,8 +478,13 @@ r.post("/resend-reset-password-code", async (req, res, next) => {
 
 r.get("/profile", auth, async (req, res, next) => {
   try {
-    const u = await User.findById(new mongoose.Types.ObjectId(req.userId)).select("-passwordHash");
-    if (!u) return res.status(404).json({ success: false, error: "Utilizador não encontrado" });
+    const u = await User.findById(
+      new mongoose.Types.ObjectId(req.userId)
+    ).select("-passwordHash");
+    if (!u)
+      return res
+        .status(404)
+        .json({ success: false, error: "Utilizador não encontrado" });
 
     res.json({ success: true, data: u });
   } catch (e) {
